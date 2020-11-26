@@ -1,7 +1,6 @@
 
 import './App.css';
 // import fs from 'fs';
-import { post } from 'axios';
 import { Component } from 'react';
 
 export default class App extends Component {
@@ -12,142 +11,99 @@ export default class App extends Component {
     this.state = {
       file: null,
       reader: new FileReader(),
-      sliceSize: 10 * 1024
+      chunkSize: 10 * 1024,
+      chunksQueue: []
     }
-
-    this.onSubmit = this.onSubmit.bind(this);
+    
     this.onSubmitStream = this.onSubmitStream.bind(this);
-    this.handleClick = this.handleClick.bind(this);
-    this.onChange = this.onChange.bind(this);
     this.onChangeStream = this.onChangeStream.bind(this);
-    this.fileUpload = this.fileUpload.bind(this);
-    this.uploadFile = this.uploadFile.bind(this);
+    this.sendNext = this.sendNext.bind(this);
+    this.upload = this.upload.bind(this);
   }
-
-  /*
-  fileUploadInChunks(file) {
-
-    
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      data = reader.result;
-    };
-    
-  }
-  */ 
 
 
   onSubmitStream(e) {
     e.preventDefault();
-    this.uploadFile(0);
+
+    const chunkSize = this.state.chunkSize;
+    const file = this.state.file;
+    const chunksQuantity = Math.ceil(file.size / chunkSize);
+
+    let chunksQueue = new Array(chunksQuantity).fill().map((_, index) => index).reverse();
+    this.setState({
+        chunksQueue: chunksQueue
+    });
+    
+    // console.log(`Starting upload ${chunksQueue}`);
+    this.sendNext(chunksQueue, chunksQuantity);
   }
 
-  uploadFile(start) {
-    const slice = this.state.sliceSize;
-    const file = this.state.file;
-    let reader = this.state.reader;
+  sendNext(chunksQueue, chunksQuantity) {
     
-    let nextSlice = start + slice + 1;
-    let blob = file.slice(start, nextSlice);
-    
-    reader.onloadend = (e) => {
-      if(e.target.readyState !== FileReader.DONE) {
-        console.log('Done');
+    if(!chunksQueue.length) {
+        console.log('All parts uploaded');
         return;
-      }
+    }
 
-      console.log('------------------------');
-      console.log(e.target.result);
-      console.log('------------------------');
-      console.log(e.target.result.size);
-      const url = 'http://localhost:5000/upload/single-stream';
+    const chunkSize = this.state.chunkSize;
+    const file = this.state.file;
+    const chunkId = chunksQueue.pop();
 
-      // XMLHttpRequest
-      const xhr = new XMLHttpRequest();
-      xhr.open("post", url);
-      xhr.setRequestHeader("Content-Type", "application/octet-stream");
-      //xhr.setRequestHeader("Content-Length", e.target.result.size);
-      xhr.setRequestHeader("X-Content-Name", file.name);
-      xhr.setRequestHeader("X-Content-Length", file.size);
+    // console.log(`${chunksQueue}`);
 
-      xhr.onreadystatechange = () => {
-          if(nextSlice < file.size) {
-            this.uploadFile(nextSlice);
-          } else {
-            console.log('All read');
-          }
-      };
+    const begin = chunkId * chunkSize;
+    const chunk = file.slice(begin, begin + chunkSize);
 
-      xhr.send(e.target.result)
+    this.upload(chunk, chunkId, chunksQuantity)
+    .then(() => {
+        this.sendNext(chunksQueue, chunksQuantity);
+    })
+    .catch(() => {
+        // chunksQueue.push(chunkId);
+    });
+  }
 
-      // AXIOS
+  upload(chunk, chunkId, chunksQuantity) {
+      // console.log(chunk, chunkId);
+      
+      const file = this.state.file;
+
       /*
-      const formData = new FormData();
-      formData.append('file', e.target.result);
-      formData.append('fileName', file.name);
-      const config = {
-        headers: {
-          'content-type': 'application/octet-stream'
-        }
-      }
-      post(url, formData, config)
-      .then(res => {
-
-      if(nextSlice < file.size) {
-        this.uploadFile(nextSlice);
-      } else {
-        console.log('All read');
-      }
+      return new Promise((resolve, reject) => {
+          if (1 === 1) resolve();
+          else reject();
       });
       */
 
+      return new Promise((resolve, reject) => {
 
-    }
+        const url = 'http://localhost:5000/upload/single-stream';
 
-    reader.readAsDataURL(blob);
-    
-  }
+        console.log(chunk.size, chunksQuantity);
 
-  handleClick() {
-    const files = document.getElementById('multiple-file').files;
-    console.log(files.length);
-    /*
-    if(files.length > 1) {
-      console.log(files[0]);
-      const readStream = fs.createReadStream(files[0]);
-      readStream.on('error', console.log);
+        // XMLHttpRequest
+        const xhr = new XMLHttpRequest();
+        xhr.open("post", url);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.setRequestHeader("X-Chunk-Id", chunkId);
+        xhr.setRequestHeader("X-Chunks-Quantity", chunksQuantity);
+        // xhr.setRequestHeader("Content-Length", chunk.size);
+        xhr.setRequestHeader("X-Content-Name", file.name);
+        xhr.setRequestHeader("X-Content-Length", file.size);
   
-      axios({
-        method: 'post',
-        url: 'http://localhost:5000/upload',
-        data: readStream,
-        headers: {
-          'Content-Type': 'text/markdown'
-        }
-      }).catch(console.log)
-    }
-    */
-  }
-
-  onSubmit(e) {
-      e.preventDefault();
-      const formID = e.target.id;
-
-      if(formID === 'single-form') {
-        this.fileUpload(this.state.file).then(
-          (res) => {
-            console.log(res.data);
-          }
-        );
-      }
+        xhr.onreadystatechange = () => {
+            if(xhr.readyState === 4 && xhr.status === 200) {
+                
+                resolve();
+            }
+        };
+        
+        xhr.onerror = reject;
+        xhr.send(chunk);
+      });
       
   }
 
-  onChange(e) {
-    this.setState({
-      file: e.target.files[0]
-    });
-  }
 
   onChangeStream(e) {
     // console.log(e.target.files[0]);
@@ -156,17 +112,6 @@ export default class App extends Component {
     });
   }
 
-  fileUpload(file) {
-    const url = 'http://localhost:5000/upload/single';
-    const formData = new FormData();
-    formData.append('file', file);
-    const config = {
-      headers: {
-        'content-type': 'multipart/form-data'
-      }
-    }
-    return post(url, formData, config);
-  }
 
 
   render() {
@@ -175,31 +120,13 @@ export default class App extends Component {
       <div className="App">
 
         <section>
-          <form onSubmit={this.onSubmit} id="single-form">
-            <h1> File Upload - Single </h1>
-            <input type="file" id="single-file" name="single-file" onChange={this.onChange} />
-            <input type="submit" />
-          </form>
-        </section>
-
-        
-        <section>
-          <h1> File Upload - Multiple</h1>
-          <input type="file" id="multiple-file" name="multiple-file" multiple />
-          <input type="submit" onClick={this.handleClick} />
-        </section>
-
-        <section>
           
           <form onSubmit={this.onSubmitStream} id="stream-single-form">
-          <h1> File Upload - Single Streaming</h1>
+          <h1> File Upload - Single (Chunking)</h1>
             <input type="file" id="single-file-stream" name="single-file-stream" onChange={this.onChangeStream} />
             <input type="submit" />
           </form>
-        </section>
 
-        <section>
-          <h1> File Upload - Multiple - Streaming</h1>
         </section>
 
       </div>
