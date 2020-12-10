@@ -2,6 +2,9 @@
 import './App.css';
 // import fs from 'fs';
 import { Component } from 'react';
+import { computeHeadingLevel } from '@testing-library/react';
+
+const axios = require('axios').default
 
 export default class App extends Component {
   
@@ -96,7 +99,9 @@ export default class App extends Component {
 
         console.log(chunk.size, chunksQuantity);
 
-        // XMLHttpRequest
+        // XHR
+
+        /*
         const xhr = new XMLHttpRequest();
         xhr.open("post", url);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
@@ -116,6 +121,35 @@ export default class App extends Component {
         
         xhr.onerror = reject;
         xhr.send(chunk);
+
+        */
+
+
+        // Axios
+
+        axios({
+          method: 'post',
+          url: '/upload/chunk',
+          baseURL: 'http://localhost:5000/',
+          // Need a way to add these to the product
+          headers: {
+            'Content-Type': 'application/octet-stream',
+          },
+          data: chunk,
+          params: {
+            'chunkId': chunkId,
+            'fileId': fileId,
+            'chunksQuantity': chunksQuantity,
+            'fileName': file.name,
+            'fileSize': file.size
+          }
+        
+        }).then(res => {
+          resolve()
+        }).catch(err => {
+          reject()
+        })
+        
       });
       
   }
@@ -143,7 +177,7 @@ export default class App extends Component {
             <input type="submit" />
           </form>
 
-          <form onSubmit={this.onSubmit} id="chunk-multiple-form">
+          <form onSubmit={this.onSubmit} encType="multipart/form-data" id="chunk-multiple-form">
             <h1>File Upload - Multiple (Chunking)</h1>
             <input type="file" id="multiple-file-chunk" name="multiple-file-chunk" multiple onChange={this.onChange} />
             <input type="submit" />
